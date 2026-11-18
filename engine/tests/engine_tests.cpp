@@ -2,6 +2,8 @@
 // Build: cmake -S engine -B build/engine -DLUMA_ENGINE_TESTS=ON && cmake --build build/engine --config Release
 // Run:   build/engine/Release/luma_engine_tests  (non-zero exit on failure)
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>

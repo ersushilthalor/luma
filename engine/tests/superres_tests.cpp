@@ -3,6 +3,8 @@
 // shifts, mosaicked RGGB with noise, then super-resolved 2x and compared with the true 2x image, against the
 // honest baseline of one demosaiced frame enlarged with bicubic interpolation.
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <random>

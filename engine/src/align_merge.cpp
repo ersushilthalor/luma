@@ -587,16 +587,16 @@ SuperResOutput super_resolve(std::vector<FrameData>& frames, int width, int heig
         for (int j = 0; j < kPts; ++j)
             for (int i = 0; i < kPts; ++i) {
                 const float px = 2.0f * (static_cast<float>(i) + 0.5f) / kPts, py = 2.0f * (static_cast<float>(j) + 0.5f) / kPts;
-                float best = 9.0f;
+                float nearest = 9.0f;
                 for (const auto& o : offs)
                     for (const auto& g : greens) {
                         // Alt sample at raw g lands at reference position g - offset; the lattice repeats every 2 px.
                         float ex = px - (g[0] - o[0]), ey = py - (g[1] - o[1]);
                         ex -= 2.0f * std::floor((ex + 1.0f) * 0.5f);
                         ey -= 2.0f * std::floor((ey + 1.0f) * 0.5f);
-                        best = std::min(best, std::sqrt(ex * ex + ey * ey));
+                        nearest = std::min(nearest, std::sqrt(ex * ex + ey * ey));
                     }
-                sum += best;
+                sum += nearest;
             }
         out.coverage_gap = static_cast<float>(sum / (kPts * kPts));
     }
