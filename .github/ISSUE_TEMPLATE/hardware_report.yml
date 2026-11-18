@@ -1,0 +1,22 @@
+name: Hardware capability report
+description: Results of the hardware discovery procedure on a device
+labels: [hardware]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Device, Android version and build number
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Findings
+      description: Cameras and physical IDs, RAW sizes per pixel mode, manual-control support, extensions, minimum focus distances. Note differences between the dumpsys output and the Luma inventory.
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Attached reports
+      description: Attach the Luma inventory report and summary.txt. Review files for personal data first.

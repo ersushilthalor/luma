@@ -1,0 +1,31 @@
+# Gradle
+.gradle/
+build/
+.kotlin/
+
+# Local machine configuration
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.navigation/
+
+# Native builds
+.cxx/
+.externalNativeBuild/
+cmake-build-*/
+
+# Signing material must never be committed
+*.jks
+*.keystore
+keystore.properties
+
+# Captured image sets and device dumps are kept out of the repository
+benchmarks/captures/
+hardware-reports/
+
+# OS
+.DS_Store
+Thumbs.db

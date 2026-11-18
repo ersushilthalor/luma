@@ -1,0 +1,35 @@
+name: Bug report
+description: Something does not work as specified
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and firmware
+      description: Model, Android version and build number (Settings > About phone > Software information).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Luma version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: capture
+    attributes:
+      label: Capture context
+      description: Mode, zoom, lens shown in the source badge, light conditions. Attach the diagnostics capture log if available. Remove location data from any attached image.

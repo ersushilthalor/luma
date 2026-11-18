@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Luma</string>
+    <string name="engine_unavailable">Native engine failed to load: %1$s</string>
+    <string name="inventory_title">Camera inventory</string>
+    <string name="inventory_permission_rationale">Android withholds some camera characteristics until camera access is granted. Scanning reads characteristics only; it does not open a camera or capture images.</string>
+    <string name="inventory_grant">Allow camera access</string>
+    <string name="inventory_scan">Scan cameras</string>
+    <string name="inventory_scanning">Scanning…</string>
+    <string name="inventory_save">Save report</string>
+    <string name="inventory_share">Share report</string>
+    <string name="inventory_saved">Saved to %1$s</string>
+    <string name="inventory_failed">Scan failed: %1$s</string>
+</resources>
