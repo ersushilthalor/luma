@@ -17,18 +17,9 @@ android {
         versionName = "0.2.0"
     }
 
-    signingConfigs {
-        create("debugConfig") {
-            storeFile = file("${rootDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-    }
-
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("debugConfig")
+            // Use AGP's standard generated debug keystore; no repository-local keystore is needed.
         }
         release {
             isMinifyEnabled = true
