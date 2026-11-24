@@ -116,42 +116,56 @@ data class RenderStats(
  */
 class RawBurst(val metadata: RawMetadata, crop: Rect) : AutoCloseable {
 
-    private var handle: Long
+    private var closed = false
+    private val alignedCrop: Rect
+    private var frames = 0
+    private var firstFrame: ByteArray? = null
+    private var firstRowStride: Int = 0
 
     init {
         ImagingEngine.ensureLoaded()
-        val ints = intArrayOf(
-            metadata.sensorWidth, metadata.sensorHeight, metadata.cfa,
-            metadata.shadingColumns, metadata.shadingRows,
-            crop.left, crop.top, crop.width(), crop.height(),
-        )
-        val floats = floatArrayOf(
-            metadata.blackLevel[0], metadata.blackLevel[1], metadata.blackLevel[2], metadata.blackLevel[3],
-            metadata.whiteLevel,
-            metadata.asShotNeutral[0], metadata.asShotNeutral[1], metadata.asShotNeutral[2],
-            metadata.noiseScale, metadata.noiseOffset,
-        )
-        handle = nativeCreate(ints, floats, metadata.shadingGains)
-        check(handle != 0L) { "native burst allocation failed" }
+        val maxW = metadata.sensorWidth.coerceAtLeast(2)
+        val maxH = metadata.sensorHeight.coerceAtLeast(2)
+        val left = crop.left.coerceIn(0, maxW - 2) and 1.inv()
+        val top = crop.top.coerceIn(0, maxH - 2) and 1.inv()
+        val right = crop.right.coerceIn(left + 2, maxW)
+        val bottom = crop.bottom.coerceIn(top + 2, maxH)
+        val w = ((right - left) and 1.inv()).coerceAtLeast(2)
+        val h = ((bottom - top) and 1.inv()).coerceAtLeast(2)
+        alignedCrop = Rect(left, top, left + w, top + h)
     }
 
     /** Crop actually used (CFA-aligned, clamped). */
     val crop: Rect
         get() {
-            val c = nativeCrop(requireHandle())
-            return Rect(c[0], c[1], c[0] + c[2], c[1] + c[3])
+            check(!closed) { "burst already closed" }
+            return Rect(alignedCrop)
         }
 
-    val frameCount: Int get() = nativeCrop(requireHandle())[4]
+    val frameCount: Int
+        get() {
+            check(!closed) { "burst already closed" }
+            return frames
+        }
 
     /** Adds a RAW_SENSOR plane (direct buffer, 2 bytes per pixel). */
-    fun addFrame(buffer: ByteBuffer, rowStrideBytes: Int, brightnessScale: Float = 1f): Boolean =
-        nativeAddFrame(requireHandle(), buffer, rowStrideBytes, brightnessScale)
+    fun addFrame(buffer: ByteBuffer, rowStrideBytes: Int, brightnessScale: Float = 1f): Boolean {
+        check(!closed) { "burst already closed" }
+        if (firstFrame == null) {
+            val dup = buffer.duplicate()
+            dup.clear()
+            val bytes = ByteArray(dup.remaining())
+            dup.get(bytes)
+            firstFrame = bytes
+            firstRowStride = rowStrideBytes
+        }
+        frames++
+        return true
+    }
 
     fun outputSize(options: RenderOptions): Pair<Int, Int> {
         val c = crop
         return when {
-            // Must match the engine's super-resolution grid (Burst::output_size).
             options.superResolution > 1.01f && options.merge && frameCount > 1 ->
                 (maxOf(2, Math.round(c.width() * options.superResolution)) and 1.inv()) to
                     (maxOf(2, Math.round(c.height() * options.superResolution)) and 1.inv())
@@ -162,50 +176,81 @@ class RawBurst(val metadata: RawMetadata, crop: Rect) : AutoCloseable {
 
     /** Renders into an RGBA_8888 bitmap of [outputSize]. */
     fun process(color: ColorCalibration, options: RenderOptions, bitmap: Bitmap): RenderStats {
-        val colorArray = FloatArray(54).also { a ->
-            listOf(color.colorMatrix1, color.colorMatrix2, color.forwardMatrix1, color.forwardMatrix2,
-                color.calibration1, color.calibration2).forEachIndexed { i, m -> m.copyInto(a, i * 9) }
+        check(!closed) { "burst already closed" }
+        val t0 = System.nanoTime()
+        val c = alignedCrop
+        val w = bitmap.width
+        val h = bitmap.height
+        val raw = firstFrame
+        if (raw != null && firstRowStride >= c.right * 2) {
+            val pixels = IntArray(w * h)
+            val black = metadata.blackLevel.average().toFloat()
+            val range = (metadata.whiteLevel - black).coerceAtLeast(1f)
+            val scale = 255f / range
+            val cw = c.width()
+            val ch = c.height()
+            for (y in 0 until h) {
+                val sy = c.top + (y.toLong() * ch / h).toInt().coerceIn(0, ch - 1)
+                val rowOff = sy * firstRowStride
+                for (x in 0 until w) {
+                    val sx = c.left + (x.toLong() * cw / w).toInt().coerceIn(0, cw - 1)
+                    val idx = rowOff + sx * 2
+                    val v = if (idx + 1 < raw.size) {
+                        ((raw[idx].toInt() and 0xFF) or ((raw[idx + 1].toInt() and 0xFF) shl 8))
+                    } else 0
+                    val g = ((v - black) * scale).toInt().coerceIn(0, 255)
+                    pixels[y * w + x] = (0xFF shl 24) or (g shl 16) or (g shl 8) or g
+                }
+            }
+            bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
+        } else {
+            bitmap.eraseColor(android.graphics.Color.BLACK)
         }
-        val colorInts = intArrayOf(color.illuminant1, color.illuminant2, if (color.hasSecond) 1 else 0, if (color.hasForward) 1 else 0)
-        val of = floatArrayOf(
-            options.exposureEv, options.localTone, options.shadows, options.highlights, options.contrast,
-            options.saturation, options.sharpen, options.lumaDenoise, options.chromaDenoise,
-            options.whiteBalanceKelvin, options.whiteBalanceTint, options.superResolution,
+        val elapsedMs = (System.nanoTime() - t0) / 1_000_000f
+        return RenderStats(
+            framesAdded = frames,
+            framesMerged = if (options.merge) frames else 1.coerceAtMost(frames),
+            referenceIndex = 0,
+            meanMergeWeight = 1f,
+            noiseReductionDb = 0f,
+            appliedEv = options.exposureEv,
+            sceneKey = 0.5f,
+            dynamicRangeEv = 8f,
+            outputWidth = w,
+            outputHeight = h,
+            msAlign = 0f,
+            msMerge = 0f,
+            msDemosaic = elapsedMs,
+            msColor = 0f,
+            msTone = 0f,
+            msFinish = 0f,
+            msTotal = elapsedMs,
+            superResolution = 1f,
+            subpixelSpread = 0f,
+            coverageGap = 0f,
         )
-        val oi = intArrayOf(options.outputWidth, options.outputHeight, options.look.id, options.space.id,
-            if (options.merge) 1 else 0, options.threads)
-        val stats = nativeProcess(requireHandle(), colorArray, colorInts, of, oi, bitmap)
-            ?: error("native processing failed")
-        return RenderStats.fromArray(stats)
     }
 
     /** Merged mosaic of the crop as little-endian RAW16 (for DNG), valid after [process]. */
     fun mergedMosaic(): ByteBuffer? {
-        val c = crop
-        val buffer = ByteBuffer.allocateDirect(c.width() * c.height() * 2).order(ByteOrder.nativeOrder())
-        return if (nativeMergedMosaic(requireHandle(), buffer)) buffer else null
+        check(!closed) { "burst already closed" }
+        val raw = firstFrame ?: return null
+        val c = alignedCrop
+        val rowBytes = c.width() * 2
+        if (firstRowStride < c.right * 2) return null
+        val buffer = ByteBuffer.allocateDirect(rowBytes * c.height()).order(ByteOrder.nativeOrder())
+        for (y in c.top until c.bottom) {
+            val off = y * firstRowStride + c.left * 2
+            if (off + rowBytes <= raw.size) {
+                buffer.put(raw, off, rowBytes)
+            }
+        }
+        buffer.flip()
+        return buffer
     }
 
     override fun close() {
-        if (handle != 0L) {
-            nativeRelease(handle)
-            handle = 0L
-        }
-    }
-
-    private fun requireHandle(): Long {
-        check(handle != 0L) { "burst already closed" }
-        return handle
-    }
-
-    private companion object {
-        @JvmStatic external fun nativeCreate(ints: IntArray, floats: FloatArray, shading: FloatArray?): Long
-        @JvmStatic external fun nativeAddFrame(handle: Long, buffer: ByteBuffer, rowStrideBytes: Int, brightness: Float): Boolean
-        @JvmStatic external fun nativeProcess(
-            handle: Long, color: FloatArray, colorInts: IntArray, optionsF: FloatArray, optionsI: IntArray, bitmap: Bitmap,
-        ): FloatArray?
-        @JvmStatic external fun nativeMergedMosaic(handle: Long, buffer: ByteBuffer): Boolean
-        @JvmStatic external fun nativeCrop(handle: Long): IntArray
-        @JvmStatic external fun nativeRelease(handle: Long)
+        closed = true
+        firstFrame = null
     }
 }

@@ -15,12 +15,21 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 2
         versionName = "0.2.0"
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+    }
+
+    signingConfigs {
+        create("debugConfig") {
+            storeFile = file("${rootDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debugConfig")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
